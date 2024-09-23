@@ -1,0 +1,222 @@
+---
+title: "Tugas 5 Praktikum MPDW"
+author: "David Fauzan Akmal"
+date: "2024-09-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Memuat Library
+
+```{r}
+library(readxl)
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+
+## Data Lengkap Periode 1-100
+
+### Impor Data
+```{r}
+data.pm <- read_excel("C://Users/USER/Downloads/Database MPDW.xlsx", sheet=1)
+data.pm <-data.pm[1:100,1:2]
+data.pm <- data.frame(
+  Tanggal = data.pm$Tanggal,
+  SS = data.pm$SS
+)
+```
+### Menambahkan 0.01 ke data pada kolom SS karena terdapat amatan bernilai 0
+```{r}
+data.pm$SS <- data.pm$SS + 0.01
+data.pm
+```
+### Mengubah Data agar Terbaca sebagai Data Deret Waktu
+```{r}
+datapm.ts <- ts(data.pm$SS)
+```
+
+### Membuat Plot Data Deret Waktu
+```{r}
+ts.plot(datapm.ts, xlab="Time Period ", ylab="Lama Penyinaran", 
+        main = "Time Series Plot Data Lengkap")
+points(datapm.ts)
+mean(datapm.ts)
+```
+```{r}
+lattice::densityplot(as.vector(datapm.ts),
+            scales = list(x = list(at = seq(min(as.vector(datapm.ts)), 
+                                            max(as.vector(datapm.ts)), 
+                                            by = 1))))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data **tidak** stasioner dalam rataan, ditandai dengan data **tidak** menyebar di sekitar nilai tengahnya (2.588) dan **tidak** stasioner dalam ragam, ditandai dengan lebar pita yang berbeda. Agar lebih pasti, dapat dibuat plot ACF, uji ADF, serta plot Box-Cox.
+
+### Plot ACF
+```{r}
+acf(datapm.ts, lag.max = 100)
+```
+
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* dan menunjukkan sedikit pola gelombang sinus yang tidak sempurna.
+
+### Melakukan Uji ADF agar Lebih Yakin terhadap Kestasioneran Data
+```{r}
+adf.test(datapm.ts)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.4221 yang lebih besar dari taraf nyata 5% sehingga **gagal** tolak $H_0$ dan menandakan bahwa data **tidak** stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series.
+
+### Plot Box-Cox untuk Mengetahui Kestasioneran Ragam Data
+```{r}
+index <- seq(1:100)
+bc = boxcox(datapm.ts~index, lambda = seq(0,2,by=0.01))
+#Nilai Rounded Lambda
+lambda1 <- bc$x[which.max(bc$y)]
+lambda1
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **0.27** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.16** dan batas atas **0.37**. Selang tersebut **tidak** memuat nilai satu sehingga dapat dikatakan bahwa data **tidak** stasioner dalam ragam.
+
+## Partisi Data Periode 1-50 (First Half/Setengah Pertama)
+
+### Impor Data (Ket: fh = first half)
+```{r}
+datapm.fh <- read_excel("C://Users/USER/Downloads/Database MPDW.xlsx", sheet=1)
+datapm.fh <-datapm.fh[1:50,1:2]
+datapm.fh <- data.frame(
+  Tanggal = datapm.fh$Tanggal,
+  SS = datapm.fh$SS
+)
+```
+### Menambahkan 0.01 ke data pada kolom SS karena terdapat amatan bernilai 0
+```{r}
+datapm.fh$SS <- datapm.fh$SS + 0.01
+datapm.fh
+```
+### Mengubah Data agar Terbaca sebagai Data Deret Waktu
+```{r}
+datafh.ts <- ts(datapm.fh$SS)
+```
+
+### Membuat Plot Data Deret Waktu
+```{r}
+ts.plot(datafh.ts, xlab="Time Period ", ylab="Lama Penyinaran", 
+        main = "Time Series Plot Data Periode 1-50")
+points(datafh.ts)
+mean(datafh.ts)
+```
+```{r}
+lattice::densityplot(as.vector(datafh.ts),
+            scales = list(x = list(at = seq(min(as.vector(datafh.ts)), 
+                                            max(as.vector(datafh.ts)), 
+                                            by = 1))))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data **tidak** stasioner dalam rataan, ditandai dengan data **tidak** menyebar di sekitar nilai tengahnya (1.81) dan **tidak** stasioner dalam ragam, ditandai dengan lebar pita yang berbeda.
+
+### Plot ACF
+```{r}
+acf(datafh.ts, lag.max = 50)
+```
+
+
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* dan sedikit menyerupai gelombang sinus namun tidak sempurna.
+
+### Melakukan Uji ADF agar Lebih Yakin terhadap Kestasioneran Data
+```{r}
+adf.test(datafh.ts)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.07498 yang lebih besar dari taraf nyata 5% sehingga **gagal** tolak $H_0$ dan menandakan bahwa data **tidak** stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series.
+
+### Plot Box-Cox untuk Mengetahui Kestasioneran Ragam Data
+```{r}
+index <- seq(1:50)
+bc = boxcox(datafh.ts~index, lambda = seq(0,2,by=0.01))
+#Nilai Rounded Lambda
+lambda2 <- bc$x[which.max(bc$y)]
+lambda2
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **0.12** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.00** dan batas atas **0.26**. Selang tersebut **tidak** memuat nilai satu sehingga dapat dikatakan bahwa data **tidak** stasioner dalam ragam.
+
+## Partisi Data Periode 51-100 (Second Half/Setengah Kedua)
+
+### Impor Data (Ket: sh = second half)
+```{r}
+datapm.sh <- read_excel("C://Users/USER/Downloads/Database MPDW.xlsx", sheet=1)
+datapm.sh <-datapm.sh[51:100,1:2]
+datapm.sh <- data.frame(
+  Tanggal = datapm.sh$Tanggal,
+  SS = datapm.sh$SS
+)
+```
+### Menambahkan 0.01 ke data pada kolom SS karena terdapat amatan bernilai 0
+```{r}
+datapm.sh$SS <- datapm.sh$SS + 0.01
+datapm.sh
+```
+### Mengubah Data agar Terbaca sebagai Data Deret Waktu
+```{r}
+datash.ts <- ts(datapm.sh$SS)
+```
+
+### Membuat Plot Data Deret Waktu
+```{r}
+ts.plot(datash.ts, xlab="Time Period ", ylab="Lama Penyinaran", 
+        main = "Time Series Plot Data Periode 51-100")
+points(datash.ts)
+mean(datash.ts)
+```
+```{r}
+lattice::densityplot(as.vector(datash.ts),
+            scales = list(x = list(at = seq(min(as.vector(datash.ts)), 
+                                            max(as.vector(datash.ts)), 
+                                            by = 1))))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data **tidak** stasioner dalam rataan, ditandai dengan data **tidak** menyebar di sekitar nilai tengahnya (3.366) dan **tidak** stasioner dalam ragam, ditandai dengan lebar pita yang berbeda.
+
+### Plot ACF
+
+```{r}
+acf(datash.ts, lag.max = 50)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* dan sedikit menyerupai gelombang sinus namun tidak sempurna.
+
+### Melakukan Uji ADF agar Lebih Yakin terhadap Kestasioneran Data
+```{r}
+adf.test(datash.ts)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.105 yang lebih besar dari taraf nyata 5% sehingga **gagal** tolak $H_0$ dan menandakan bahwa data **tidak** stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series.
+
+### Plot Box-Cox untuk Mengetahui Kestasioneran Ragam Data
+```{r}
+index <- seq(1:50)
+bc = boxcox(datash.ts~index, lambda = seq(0,4,by=0.01))
+#Nilai Rounded Lambda
+lambda3 <- bc$x[which.max(bc$y)]
+lambda3
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **0.45** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.29** dan batas atas **0.61**. Selang tersebut **tidak** memuat nilai satu sehingga dapat dikatakan bahwa data **tidak** stasioner dalam ragam.
