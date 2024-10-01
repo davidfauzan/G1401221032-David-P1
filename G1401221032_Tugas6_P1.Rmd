@@ -1,0 +1,185 @@
+---
+title: "Tugas Pertemuan 6 MPDW"
+author: "David Fauzan Akmal"
+date: "2024-10-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(forecast)
+library(TSA)
+library(TTR)
+library(TSA)
+library(graphics)
+library(readxl)
+```
+
+### Impor Data
+
+```{r}
+data.pm <- read_excel("C://Users/USER/Downloads/Database MPDW.xlsx", sheet=1)
+data.pm <-data.pm[1:100,1:2]
+
+data.pm <- data.frame(
+  Tanggal = data.pm$Tanggal,
+  SS = data.pm$SS
+)
+```
+
+### Menambahkan 0.01 ke data pada kolom SS karena terdapat amatan bernilai 0
+
+```{r}
+data.pm$SS <- data.pm$SS + 0.01
+data.pm
+```
+
+### Eksplorasi Data
+
+```{r}
+datapm.ts <- ts(data.pm$SS)
+```
+
+```{r}
+ts.plot(datapm.ts, xlab="Time Period ", ylab="Lama Penyinaran", 
+        main = "Time Series Plot Data Lengkap")
+points(datapm.ts)
+```
+#### Plot Data Penuh
+
+```{r}
+plot.ts(datapm.ts, lty=1, xlab="periode", ylab="lama penyinaran", main="Plot Data Penuh")
+mean(datapm.ts)
+```
+Berdasarkan plot data deret waktu, terlihat bahwa data tidak stasioner ditandai dengan ditandai dengan data tidak menyebar di sekitar nilai tengahnya (2.588) dan tidak stasioner dalam ragam, ditandai dengan lebar pita yang berbeda. Akan dilakukan pembagian data latih dan data uji.
+
+#### Plot Data Latih
+
+```{r}
+datatrain <- data.pm[1:83,]
+train.ts <- ts(datatrain$SS)
+plot(train.ts, col="blue",main="Plot data latih")
+points(train.ts)
+```
+Berdasarkan plot data deret waktu pada data latih, terlihat bahwa data cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+#### Plot Data Uji
+
+```{r}
+datatest <- data.pm[84:100,]
+test.ts <- ts(datatest$SS)
+plot(test.ts, col="red",main="Plot data uji")
+points(test.ts)
+```
+### Uji Stasioneritas Data
+
+#### Plot ACF
+
+```{r}
+acf(train.ts)
+```
+Berdasarkan plot ACF, terlihat bahwa plot ACF data menurun secara perlahan (*tails of slowly*). Hal ini juga menjadi indikasi bahwa data tidak stasioner dalam rataan
+
+#### Uji ADF
+
+```{r}
+tseries::adf.test(train.ts)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.3261 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF, sehingga ketidakstasioneran model kedepannya harus ditangani
+
+### Plot Box Cox
+
+```{r}
+index <- seq(1:83)
+bc = boxcox(train.ts~index, lambda = seq(-1,1,by=0.01))
+```
+```{r}
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+```{r}
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+
+
+Plot Boxcox menunjukkan nilai rounded value (λ) optimum sebesar 0.16 dan pada selang kepercayaan 95% nilai memiliki batas bawah 0.05 dan batas atas 0.27. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa data yang digunakan tidak stasioner dalam ragam
+
+
+
+#Penanganan (Diff) train.test
+```{r}
+train.diff<-diff(train.ts,differences = 1) 
+plot.ts(train.diff, lty=1, xlab="periode", ylab="penyinaran matahari", main="Plot Penyinaran Matahari")
+```
+Berdasarkan plot data deret waktu, terlihat bahwa data sudah stasioner dalam rataan ditandai dengan data bergerak pada nilai tengah tertentu (tidak terdapat trend ataupun musiman pada data)
+```{r}
+tseries::adf.test(train.diff)
+```
+𝐻0  : Data tidak stasioner dalam rataan
+
+𝐻1 : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat p-value sebesar 0.01 yang kurangg dari taraf nyata 5%, maka tolak 𝐻0 dan menandakan bahwa data stasioner dalam rataan.
+
+#Identifikasi Model
+```{r}
+acf(train.diff)
+```
+Berdasarkan plot tersebut, terlihat bahwa plot ACF cuts off pada lag ke 1. Hal ini menandakan data sudah stasioner dalam rataan dan ketidakstasioneran data telah berhasil tertangani. Jika plot ACF ini cenderung cuts off pada lag ke 1, sehingga jika plot PACF dianggap tails off, maka model tentatifnya adalah ARIMA (0,1,1)
+
+```{r}
+pacf(train.diff)
+```
+Berdasarkan plot tersebut, terlihat bahwa plot PACF cenderung cuts off pada lag ke 1, sehingga jika plot ACF dianggap tails off, maka model tentatifnya adalah ARIMA(1,1,0).
+
+
+#Spesifikasi Model
+```{r}
+eacf(train.diff) 
+```
+Menggunakan plot EACF, dapat diambil beberapa model dengan melihat ujung segitiga yang terbentuk, antara lain
+ARIMA (0,1,1), ARIMA(1,1,0), ARIMA(1,1,1), ARIMA(2,1,1), dan ARIMA(3,1,3)
+
+```{r}
+model1.da=Arima(train.diff, order=c(0,1,1),method="ML")
+summary(model1.da) 
+lmtest::coeftest(model1.da) 
+```
+
+```{r}
+model2.da=Arima(train.diff, order=c(1,1,0),method="ML")
+summary(model2.da) 
+lmtest::coeftest(model2.da) 
+```
+
+
+```{r}
+model3.da=Arima(train.diff, order=c(1,1,1),method="ML")
+summary(model3.da) 
+lmtest::coeftest(model3.da) 
+```
+
+```{r}
+model4.da=Arima(train.diff, order=c(2,1,1),method="ML")
+summary(model4.da) 
+lmtest::coeftest(model4.da)
+```
+
+```{r}
+model5.da=Arima(train.diff, order=c(3,1,3),method="ML")
+summary(model5.da) 
+lmtest::coeftest(model5.da) 
+```
+Berdasarkan pendugaan parameter di atas, nilai AIC terkecil dimiliki oleh model ARIMA(3,1,3) namun ada parameter yang tidak signifikan. Model ARIMA(2,1,1) memiliki nilai AIC kedua terkecil namun parameter model ARIMA(2,1,1) juga masih ada parameter yang tidak signifikan. Model dengan parameter signifikan semua dengan AIC terkecil adalah model ARIMA(1,1,1), namun nilai AIC nya terkecil ketiga yaitu **370.41**.
