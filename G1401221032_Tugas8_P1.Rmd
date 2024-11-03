@@ -1,0 +1,347 @@
+---
+title: "Pemodelan SARIMA"
+author: "David Fauzan Akmal"
+date: "2024-11-03"
+output: html_document
+---
+
+## Packages
+```{r}
+library(readxl)
+library(tidyverse)
+library(forecast)
+library(TSA)
+library(aTSA)
+library(lmtest)
+```
+## Impor Data
+```{r}
+angkutan <- read_excel("C://Users/USER/Downloads/dataangkutan.xlsx")
+head(angkutan)
+```
+## Mengubah data agar terbaca sebagai data deret waktu
+```{r}
+angkutan.ts <- ts(angkutan$`Jumlah Barang Angkutan`, frequency = 12) #Karena data bulanan
+summary(angkutan.ts)
+class(angkutan.ts)
+```
+## Eksplorasi Data
+```{r}
+ts.plot(angkutan.ts, type="l", xlab = "Time Period", ylab="Jumlah Barang Angkutan", col="blue")
+title(main = "Plot Time Series Jumlah Angkutan Barang Pulau Jawa", cex.sub = 0.8)
+points(angkutan.ts, pch = 20, col = "blue")
+```
+```{r}
+dec.angkutan <- decompose(angkutan.ts)
+plot(dec.angkutan)
+```
+
+
+
+Dari eksplorasi tersebut, terlihat adanya kecenderungan data memiliki tren naik dan perilaku berulang kecenderungan musiman dalam deret tersebut.
+
+```{r}
+seasonplot(angkutan.ts,12,main="Seasonal Plot of Jumlah Angkutan Barang", ylab="Year",
+           year.labels = TRUE, col=rainbow(18))
+```
+```{r}
+monthplot(angkutan.ts,ylab="Jumlah Angkutan Barang", col="blue")
+```
+```{r}
+frame<-data.frame(values=as.matrix(angkutan.ts), date=lubridate::year(zoo::as.Date(angkutan.ts)))
+
+library(ggplot2)
+ggplot(frame,aes(y=values,x=date,group=date))+
+  geom_boxplot()
+```
+
+
+
+Berdasarkan hasil plot di atas dapat terlihat bahwa data memiliki pola yang hampir sama dari tahun ke tahun sehingga dapat disimpulkan bahwa periode musimannya adalah 12. Selain itu, apabila dilihat dari boxplot, terlihat bahwa data cenderung heterogen dari tahun ke tahun karena panjang box nya cukup berbeda-beda. Untuk memastikan bahwa data homogen atau tidak akan dilakukan uji homogenitas dengan fligner.test.
+
+## Uji Homogenitas
+```{r}
+library(car)
+fligner.test(values ~ date, data=frame)
+```
+Berdasarkan hasil uji Fligner-Killeen dengan menggunakan taraf signifikansi α=5% didapatkan p-value sebesar 0.1747. p−value=0.1747 > α=0.05 sehingga tak tolak H0 atau dengan kata lain ragam data sudah homogen.
+
+## Pembagian Data
+Pembagian data tidak dapat dilakukan tepat 80% dan 20% karena menyebabkan perubahan arah kurva pada amatan tersebut. Jadi dengan melihat pola data, data dibagi dengan mengambil data pada amatan 1-128 sebagai data latih dan amatan ke 129-156 sebagai data uji. 
+
+```{r}
+train.ts <- subset(angkutan.ts, start=1, end=128)
+test.ts <- subset(angkutan.ts, start=129, end=156)
+```
+
+# Plot Data Latih
+```{r}
+autoplot(train.ts) + theme_bw() + xlab("Time Period") + ylab("Jumlah Angkutan Barang")
+```
+
+
+# Plot Data Uji
+```{r}
+autoplot(test.ts) + theme_bw() + xlab("Time Period") + ylab("Jumlah Angkutan Barang")
+```
+
+
+## Non-Seasonal Arima
+
+# Kestasioneran Data
+```{r}
+acf0 <- acf(train.ts,main="ACF",lag.max=48,xaxt="n", col="blue")
+axis(1, at=0:48/12, labels=0:48)
+```
+```{r}
+acf0$lag <- acf0$lag * 12
+acf0.1 <- as.data.frame(cbind(acf0$acf,acf0$lag))
+acf0.2 <- acf0.1[which(acf0.1$V2%%12==0),]
+barplot(height = acf0.2$V1, 
+names.arg=acf0.2$V2, ylab="ACF", xlab="Lag")
+```
+
+
+
+Plot ACF meluruh secara cukup perlahan dan membentuk pola gelombang kosinus teredam, yang menandakan ketidakstasioneran, namun dilihat nilai fungsi autokorelasi pada lag-lag musiman (lag 12, 24, 36,...) tidak meluruh secara perlahan sehingga dapat dikatakan stasioner. Agar lebih yakin terhadap kestasioneran data, maka akan dilakukan uji formal yaitu uji ADF.
+
+```{r}
+tseries::adf.test(train.ts)
+```
+H0: Data tidak stasioner dalam rataan
+H1: Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat p-value sebesar 0.04494 yang lebih kecil dari taraf nyata 5% sehingga tolak H0 dan menandakan bahwa data stasioner dalam rataan. Hal ini berbeda dengan hasil eksplorasi menggunakan plot ACF. Dari plot time series terdapat tren naik sehingga tetap perlu differencing. 
+
+# Pembedaan
+
+Dilakukan pembedaan karena plot time series terdapat tren naik. Pembedaan dilakukan dengan ordo 1.
+```{r}
+d1 <- diff(train.ts)
+ts.plot(d1, type="l", ylab="d1 Xt", col="blue")
+```
+```{r}
+acf1 <- acf(d1,lag.max=48,xaxt="n", main="ACF d1", col="blue")
+axis(1, at=0:48/12, labels=0:48)
+```
+```{r}
+acf2 <- acf1$lag <- acf1$lag * 12
+acf1.1 <- as.data.frame(cbind(acf1$acf,acf1$lag))
+acf1.2 <- acf1.1[which(acf1.1$V2%%12==0),]
+barplot(height = acf1.2$V1, names.arg=acf1.2$V2, ylab="ACF", xlab="Lag")
+```
+
+
+
+Plot ACF data non-seasonal differencing d=1 mengkonfirmasi kestasioneran komponen non-seasonal (namun perhatikan lag 12,24, dst), pada series seasonal juga sudah stasioner. Selanjutnya, dilakukan identifikasi model.
+
+## Seasonal ARIMA
+
+# Identifikasi Model
+```{r}
+acf3 <- acf(d1,lag.max=48,xaxt="n", main="ACF d1", col="blue")
+axis(1, at=0:48/12, labels=0:48)
+```
+```{r}
+acf3$lag <- acf3$lag * 12
+acf3.1 <- as.data.frame(cbind(acf3$acf,acf3$lag))
+acf3.2 <- acf3.1[which(acf3.1$V2%%12==0),]
+barplot(height = acf3.2$V1, names.arg=acf3.2$V2, ylab="ACF", 
+xlab="Lag")
+```
+
+
+
+Berdasarkan plot ACF tersebut lag 1 signifikan sehingga dipilih ordo q=1 dan lag 12 adalah satu-satunya lag musiman yang signifikan sehingga order Q=1.
+
+```{r}
+pacf3 <- pacf(d1,lag.max=48,xaxt="n", main="PACF d1", col="blue")
+axis(1, at=0:48/12, labels=0:48)
+```
+```{r}
+pacf3$lag <- pacf3$lag * 12
+pacf3.1 <- as.data.frame(cbind(pacf3$acf,pacf3$lag))
+pacf3.2 <- pacf3.1[which(pacf3.1$V2%%12==0),]
+barplot(height = pacf3.2$V1, names.arg=pacf3.2$V2, ylab="PACF", xlab="Lag")
+```
+
+
+
+Plot PACF tersebut menunjukkan cuts-off pada lag-2 sehingga ordo p=2, sementara pada pola musimannya tidak terlihat model AR yang terbentuk karena cenderung tails-off.
+
+Model musiman yang dipilih untuk deret jumlah angkutan barang adalah $ARIMA(0,1,1)×(0,0,1)_{12}$, $ARIMA(2,1,0)×(0,0,1)_{12}$.
+
+# EACF
+
+```{r}
+TSA::eacf(d1)
+```
+Model tentatif yang diperoleh adalah $ARIMA(0,1,1)×(0,0,1)_{12}$, $ARIMA(2,1,0)×(0,0,1)_{12}$, $ARIMA(1,1,2)×(0,0,1)_{12}$, $ARIMA(2,1,3)×(0,0,1)_{12}$, $ARIMA(3,1,3)×(0,0,1)_{12}$
+
+# Pendugaan Parameter
+```{r}
+#ARIMA(0,1,1)x(0,0,1)12
+tmodel1 <- Arima(train.ts,order=c(0,1,1),seasonal=c(0,0,1))
+summary(tmodel1)
+```
+```{r}
+lmtest::coeftest(tmodel1)
+```
+```{r}
+#ARIMA(2,1,0)x(0,0,1)12
+tmodel2 <- Arima(train.ts,order=c(2,1,0),seasonal=c(0,0,1))
+summary(tmodel2)
+```
+```{r}
+lmtest::coeftest(tmodel2)
+```
+```{r}
+#ARIMA(1,1,2)x(0,0,1)12
+tmodel3 <- Arima(train.ts,order=c(1,1,2),seasonal=c(0,0,1))
+summary(tmodel3)
+```
+```{r}
+lmtest::coeftest(tmodel1)
+```
+
+```{r}
+#ARIMA(2,1,3)x(0,0,1)12
+tmodel4 <- Arima(train.ts,order=c(2,1,3),seasonal=c(0,0,1))
+summary(tmodel4)
+```
+
+```{r}
+lmtest::coeftest(tmodel4)
+```
+
+```{r}
+#ARIMA(3,1,3)x(0,0,1)12
+tmodel5 <- Arima(train.ts,order=c(3,1,3),seasonal=c(0,0,1))
+summary(tmodel5)
+```
+
+```{r}
+lmtest::coeftest(tmodel5)
+```
+
+```{r}
+AICKandidatModel <- c(tmodel1$aic, tmodel2$aic, tmodel3$aic,
+                      tmodel4$aic, tmodel5$aic)
+AICcKandidatModel <- c(tmodel1$aicc, tmodel2$aicc, tmodel3$aicc,
+                       tmodel4$aicc, tmodel5$aicc)
+BICKandidatModel <- c(tmodel1$bic, tmodel2$bic, tmodel3$bic,
+                      tmodel4$bic, tmodel5$bic)
+KandidatModelARIMA <- c("ARIMA(0,1,1)(0,0,1)12", "ARIMA(2,1,0)(0,0,1)12",
+                        "ARIMA(1,1,2)(0,0,1)12", "ARIMA(2,1,3)(0,0,1)12",
+                        "ARIMA(3,1,3)(0,0,1)12")
+compmodelARIMA <- cbind(KandidatModelARIMA, AICKandidatModel,
+                        AICcKandidatModel, BICKandidatModel)
+colnames(compmodelARIMA) <- c("Kandidat Model", "Nilai AIC", 
+                              "Nilai AICc", "Nilai BIC")
+compmodelARIMA <- as.data.frame(compmodelARIMA)
+compmodelARIMA
+```
+Model terbaik berdasarkan nilai AIC terkecil dari kandidat model yaitu ARIMA(3,1,3)×(0,0,1)12, tetapi dengan mempertimbangkan signifikansi parameter dan kesederhanaan model akan dipilih ARIMA(0,1,1)×(0,0,1)12.
+
+## Diagnostik Model
+
+```{r}
+tsdisplay(residuals(tmodel1), lag.max=45, 
+          main='ARIMA(0,1,1)(0,0,1)12 Model Residuals', col="blue")
+```
+```{r}
+sisaan.model1 <- tmodel1$residuals
+par(mfrow=c(2,2))
+car::qqPlot(sisaan.model1)
+plot(c(1:length(sisaan.model1)),sisaan.model1)
+acf(sisaan.model1)
+pacf(sisaan.model1)
+```
+
+
+
+Berdasarkan plot di atas terlihat bahwa sisaan mengikuti sebaran normal meskipun terdapat sedikit penyimpangan di kedua ujung ekor. Kemudian dapat dilihat juga lebar pita sisaan yang cenderung tidak sama menandakan bahwa sisaan memiliki ragam yang tidak homogen. Terlihat bahwa sisaan berfluktuasi di sekitar nilai nol. Ini menunjukkan bahwa asumsi bahwa nilai tengah sisaan sama dengan nol cukup terpenuhi. Selanjutnya, ditinjau dari plot ACF dan PACF terlihat bahwa tidak ada lag yang signifikan. Hal tersebut menunjukkan bahwa kemungkinan tidak ada gejala autokorelasi pada sisaan. Selanjutnya, untuk memastikan kembali akan dilakukan uji asumsi secara formal:
+
+## Uji Formal
+```{r}
+#1) Sisaan Menyebar Normal
+ks.test(sisaan.model1,"pnorm")
+```
+```{r}
+shapiro.test(sisaan.model1)
+```
+```{r}
+nortest::ad.test(sisaan.model1)
+```
+Berdasarkan uji KS tersebut, didapat p-value sebesar 0.000 yang lebih kecil dari taraf nyata 5% sehingga tolak H0 dan menandakan bahwa sisaan tidak menyebar normal. Hal ini berbeda dengan eksplorasi.
+
+```{r}
+#2) Sisaan saling bebas/tidak ada autokorelasi
+Box.test(sisaan.model1, type = "Ljung") 
+```
+Berdasarkan uji Ljung-Box tersebut, didapat p-value sebesar 0.819 yang lebih besar dari taraf nyata 5% sehingga tak tolak H0 dan menandakan bahwa sisaan saling bebas. Hal ini sesuai dengan eksplorasi.
+
+```{r}
+#3) Sisaan homogen 
+Box.test((sisaan.model1)^2, type = "Ljung")  
+```
+Berdasarkan uji Ljung-Box terhadap sisaan kuadrat tersebut, didapat p-value sebesar 0.3704 yang lebih besar dari taraf nyata 5% sehingga tak tolak H0 dan menandakan bahwa ragam sisaan homogen. Hal ini berbeda dengan eksplorasi.
+
+```{r}
+#4) Nilai tengah sisaan sama dengan nol 
+t.test(sisaan.model1, mu = 0, conf.level = 0.95)
+```
+Berdasarkan uji-ttersebut, didapat p-value sebesar 0.1044 yang lebih besar dari taraf nyata 5% sehingga tak tolak H0 dan menandakan bahwa nilai tengah sisaan sama dengan nol. Hal ini sesuai dengan eksplorasi.
+
+## Overfitting
+Pertama, overfit pada model non-musimannya (p,q)
+```{r}
+#ARIMA(1,1,1)x(0,0,1)12
+tmodel1.ofp <- Arima(train.ts,order=c(1,1,1),seasonal=c(0,0,1))
+summary(tmodel1.ofp)
+```
+
+```{r}
+lmtest::coeftest(tmodel1.ofp)
+```
+
+
+```{r}
+#ARIMA(0,1,2)x(0,0,1)12
+tmodel1.ofq <- Arima(train.ts,order=c(0,1,2),seasonal=c(0,0,1))
+summary(tmodel1.ofq)
+```
+```{r}
+lmtest::coeftest(tmodel1.ofq)
+```
+Pada model musiman, ordo yang dilakukan overfit adalah ordo musiman (P, Q).
+```{r}
+#ARIMA(0,1,1)x(1,0,1)12
+tmodel1.ofP <- Arima(train.ts,order=c(0,1,1),seasonal=c(1,0,1))
+summary(tmodel1.ofP)
+```
+```{r}
+lmtest::coeftest(tmodel1.ofP)
+```
+```{r}
+#ARIMA(0,1,1)x(0,0,2)12
+tmodel1.ofQ <- Arima(train.ts,order=c(0,1,1),seasonal=c(0,0,2))
+summary(tmodel1.ofQ)
+```
+```{r}
+lmtest::coeftest(tmodel1.ofQ)
+```
+Model overfitting dengan menaikkan 1 ordo Q menghasilkan nilai AIC yang lebih kecil dari model yang dipilih sebelumnya serta semua parameter signifikan. Oleh karena itu, model $ARIMA(0,1,1)×(0,0,2)_{12}$ hasil overfitting akan digunakan.
+
+## Peramalan
+
+```{r}
+ramalan_sarima = forecast::forecast(tmodel1.ofQ, 28)
+ramalan_sarima
+```
+```{r}
+autoplot(ramalan_sarima, col="blue")
+```
+```{r}
+accuracy(ramalan_sarima,test.ts)
+```
